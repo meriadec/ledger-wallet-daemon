@@ -24,6 +24,8 @@ class ApiClient(implicit val ec: ExecutionContext) extends Logging {
 
   import ApiClient._
 
+  private val mapper: FinatraObjectMapper = FinatraObjectMapper.create()
+
   def getFees(currencyName: String): Future[FeeInfo] = {
     val path = getPathForCurrency(currencyName)
     val (host, service) = services.getOrElse(currencyName, services("default"))
@@ -112,7 +114,6 @@ class ApiClient(implicit val ec: ExecutionContext) extends Logging {
     }.asScala()
   }
 
-  private val mapper: FinatraObjectMapper = FinatraObjectMapper.create()
   private val budget: RetryBudget = RetryBudget(
     ttl = Duration.fromSeconds(DaemonConfiguration.explorer.client.retryTtl),
     minRetriesPerSec = DaemonConfiguration.explorer.client.retryMin,
