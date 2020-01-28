@@ -102,6 +102,8 @@ class DaemonExceptionMapper @Inject()(response: ResponseBuilder)
         )
       case e: FallbackBalanceProviderException =>
         ResponseSerializer.serializeInternalError(request, response, e)
+      case e: InvalidUrlException =>
+        ResponseSerializer.serializeInternalError(request, response, e)
     }
   }
 }

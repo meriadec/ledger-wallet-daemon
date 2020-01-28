@@ -15,7 +15,7 @@ import scala.concurrent.ExecutionContext
 
 @Test
 class ScalaHttpClientTest extends AssertionsForJUnit with Logging{
-  val url = "http://postman-echo.com/get?foo1=bar1&foo2=bar2"
+  val url = "https://postman-echo.com/get?foo1=bar1&foo2=bar2"
   val headers: util.HashMap[String, String] = new util.HashMap[String, String]()
 
   @Test
@@ -26,7 +26,7 @@ class ScalaHttpClientTest extends AssertionsForJUnit with Logging{
     val result: AtomicReference[Either[core.Error, HttpUrlConnection]] = new AtomicReference()
     val req = new HttpRequestT(result, lock)
     client.execute(req)
-    lock.await(3000, TimeUnit.MILLISECONDS)
+    lock.await(30000, TimeUnit.MILLISECONDS)
     assert(result.get().isRight)
     val httpResult: HttpUrlConnection = result.get().right.get
     val body = new String(httpResult.readBody().getData)
