@@ -6,7 +6,7 @@ import co.ledger.core.TimePeriod
 import co.ledger.wallet.daemon.models.{AccountDerivationView, AccountView, FreshAddressView}
 import co.ledger.wallet.daemon.services.OperationQueryParams
 import co.ledger.wallet.daemon.utils.APIFeatureTest
-// import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.JsonNode
 import com.twitter.finagle.http.{Response, Status}
 
 class AccountsApiTest extends APIFeatureTest {
@@ -130,8 +130,101 @@ class AccountsApiTest extends APIFeatureTest {
     deletePool("account_pool")
   }
 
-  // FIXME: Broken test
-  /*
+  test("AccountsApi#Create and Delete pool with wallet accounts") {
+    val poolName = "test_delete_pool"
+    val wallet1 = "account_deletePool_wal1"
+    val wallet2 = "account_deletePool_wal2"
+    val wallet3 = "account_deletePool_wal3"
+
+    createPool(poolName)
+    assertWalletCreation(poolName, wallet1, "bitcoin", Status.Ok) // no account associated
+    assertWalletCreation(poolName, wallet2, "bitcoin", Status.Ok) // 1 account associated
+    assertWalletCreation(poolName, wallet3, "bitcoin", Status.Ok) // 2 accounts
+    assertCreateAccount(CORRECT_BODY, poolName, wallet2, Status.Ok)
+    assertCreateAccount(CORRECT_BODY, poolName, wallet3, Status.Ok)
+    assertCreateAccount(CORRECT_BODY_IDX1, poolName, wallet3, Status.Ok)
+
+    val pool = getPool(poolName, Status.Ok)
+    val walPoolView: JsonNode = server.mapper.objectMapper.readTree(pool.getContentString())
+    assert(walPoolView.findValue("name").asText().equals(poolName))
+    assert(walPoolView.findValue("wallet_count").asInt() == 3)
+    info(s"Pool is = $pool and $walPoolView")
+    deletePool(poolName)
+    getPool(poolName, Status.NotFound)
+  }
+
+  test("AccountsApi#Create account and delete specific account") {
+    val poolName = "delete_account"
+    val wallet1 = "test_deleteAcc_wal1"
+    val wallet2 = "test_deleteAcc_wal2"
+    val wallet3 = "test_deleteAcc_wal3"
+
+    // Create Pool wallets and accounts
+    createPool(poolName)
+
+    assertWalletCreation(poolName, wallet1, "bitcoin", Status.Ok) // no account associated
+    assertWalletCreation(poolName, wallet2, "bitcoin", Status.Ok) // 1 account associated
+    assertWalletCreation(poolName, wallet3, "bitcoin", Status.Ok) // 2 accounts
+    assertCreateAccount(CORRECT_BODY, poolName, wallet2, Status.Ok)
+    assertCreateAccount(CORRECT_BODY, poolName, wallet3, Status.Ok)
+    assertCreateAccount(CORRECT_BODY_IDX1, poolName, wallet3, Status.Ok)
+
+    // Sync
+    assertSyncAccount(poolName, wallet2, 0)
+    assertSyncAccount(poolName, wallet3, 0)
+    assertSyncAccount(poolName, wallet3, 1)
+
+    val countWall3A0 = transactionCountOf(poolName, wallet3, 0)
+
+    // Get then Delete and check operation count for the 3 accounts
+    assert(transactionCountOf(poolName, wallet2, 0) > 0)
+    deleteAccount(poolName, wallet2, 0, Status.Ok)
+    assert(transactionCountOf(poolName, wallet2, 0) == 0)
+    assert(transactionCountOf(poolName, wallet3, 0) > 0)
+    assert(transactionCountOf(poolName, wallet3, 1) > 0)
+
+    deleteAccount(poolName, wallet3, 1, Status.Ok)
+    assert(transactionCountOf(poolName, wallet2, 0) == 0)
+    assert(transactionCountOf(poolName, wallet3, 0) > 0)
+    assert(transactionCountOf(poolName, wallet3, 1) == 0)
+
+    deleteAccount(poolName, wallet3, 0, Status.Ok)
+    assert(transactionCountOf(poolName, wallet2, 0) == 0)
+    assert(transactionCountOf(poolName, wallet3, 0) == 0)
+    assert(transactionCountOf(poolName, wallet3, 1) == 0)
+    assertGetAccounts(Some(0), poolName, wallet2, Status.Ok)
+    assertGetAccounts(Some(0), poolName, wallet3, Status.Ok)
+    assertGetAccounts(Some(1), poolName, wallet3, Status.Ok)
+
+    // Sync again and retrieve operations for a given account only (others should stay empty)
+    assertSyncAccount(poolName, wallet3, 0)
+    assert(transactionCountOf(poolName, wallet2, 0) == 0)
+    val countWall3A0After = transactionCountOf(poolName, wallet3, 0)
+    assert(countWall3A0After > 0)
+    assert(countWall3A0After == countWall3A0)
+    assert(transactionCountOf(poolName, wallet3, 1) == 0) // Still unchanged
+    assertGetAccounts(Some(0), poolName, wallet2, Status.Ok)
+    assertGetAccounts(Some(0), poolName, wallet3, Status.Ok)
+    assertGetAccounts(Some(1), poolName, wallet3, Status.Ok)
+  }
+
+  private def transactionCountOf(poolName: String, walletName: String, accIdx: Int): Int = {
+    val response = assertGetAccounts(Some(accIdx), poolName, walletName, Status.Ok)
+    val jsonAccount: JsonNode = server.mapper.objectMapper.readTree(response.getContentString())
+    val opsJson = jsonAccount.findValue("operation_count")
+
+    val received = Option(opsJson.findValue("RECEIVE")) match {
+      case Some(v) => v.intValue()
+      case _ => 0
+    }
+
+    val sent = Option(opsJson.findValue("SEND")) match {
+      case Some(v) => v.intValue()
+      case _ => 0
+    }
+    sent + received
+  }
+
   test("AccountsApi#Get account operations") {
 
     def getUUID(field: String, content: Map[String, JsonNode]): Option[UUID] = {
@@ -145,7 +238,7 @@ class AccountsApiTest extends APIFeatureTest {
     assertSyncPool(Status.Ok)
     assertGetAccountOp("op_pool", "op_wallet", 0, "noexistop", 0, Status.NotFound)
     assertGetAccountOp("op_pool", "op_wallet", 0, "bcbe563a94e70a6fe0a190d6578f5440615eb64bbd6c49b2a6b77eb9ba01963a", 0, Status.Ok)
-    val response = assertGetFirstOperation(0,"op_pool", "op_wallet", Status.Ok).contentString
+    val response = assertGetFirstOperation(0, "op_pool", "op_wallet", Status.Ok).contentString
     assert(response.contains("ed977add08cfc6cd158e65150bcd646d7a52b60f84e15e424b617d5511aaed21"))
 
 
@@ -167,16 +260,6 @@ class AccountsApiTest extends APIFeatureTest {
     deletePool("op_pool")
   }
 
-  private def assertGetAccountOp(poolName: String, walletName: String, accountIndex: Int, uid: String, fullOp: Int, expected: Status): Response = {
-    val sb = new StringBuilder(s"/pools/$poolName/wallets/$walletName/accounts/$accountIndex/operations/$uid?full_op=$fullOp")
-    server.httpGet(sb.toString(), headers = defaultHeaders, andExpect = expected)
-  }
-
-  private def assertGetFirstOperation(index: Int, poolName: String, walletName: String, expected: Status): Response = {
-    server.httpGet(s"/pools/$poolName/wallets/$walletName/accounts/$index/operations/first", headers = defaultHeaders, andExpect = expected)
-  }
-  */
-
   test("AccountsApi#Pool not exist") {
     createPool("op_pool_mal")
     assertWalletCreation("op_pool_mal", "op_wallet", "bitcoin", Status.Ok)
@@ -186,6 +269,15 @@ class AccountsApiTest extends APIFeatureTest {
     assertGetAccountOps("op_pool_mal", "op_wallet", 0, OperationQueryParams(None, Option(UUID.randomUUID), 2, 0), Status.BadRequest)
     assertGetAccountOps("op_pool_mal", "op_wallet", 0, OperationQueryParams(Option(UUID.randomUUID), None, 2, 0), Status.BadRequest)
     deletePool("op_pool_mal")
+  }
+
+  private def assertGetAccountOp(poolName: String, walletName: String, accountIndex: Int, uid: String, fullOp: Int, expected: Status): Response = {
+    val sb = new StringBuilder(s"/pools/$poolName/wallets/$walletName/accounts/$accountIndex/operations/$uid?full_op=$fullOp")
+    server.httpGet(sb.toString(), headers = defaultHeaders, andExpect = expected)
+  }
+
+  private def assertGetFirstOperation(index: Int, poolName: String, walletName: String, expected: Status): Response = {
+    server.httpGet(s"/pools/$poolName/wallets/$walletName/accounts/$index/operations/first", headers = defaultHeaders, andExpect = expected)
   }
 
   private def history(poolName: String, walletName: String, accountIndex: Int, start: String, end: String, timeInterval: String, expected: Status): Response = {
@@ -218,7 +310,6 @@ class AccountsApiTest extends APIFeatureTest {
       case None => server.httpGet(s"/pools/$poolName/wallets/$walletName/accounts/next", headers = defaultHeaders, andExpect = expected)
       case Some(i) => server.httpGet(s"/pools/$poolName/wallets/$walletName/accounts/next?account_index=$i", headers = defaultHeaders, andExpect = expected)
     }
-
   }
 
   private def assertGetFreshAddresses(poolName: String, walletName: String, index: Int, expected: Status): Response = {
@@ -232,6 +323,25 @@ class AccountsApiTest extends APIFeatureTest {
       """{""" +
       """"owner": "main",""" +
       """"path": "44'/0'/0'",""" +
+      """"pub_key": "0437bc83a377ea025e53eafcd18f299268d1cecae89b4f15401926a0f8b006c0f7ee1b995047b3e15959c5d10dd1563e22a2e6e4be9572aa7078e32f317677a901",""" +
+      """"chain_code": "d1bb833ecd3beed6ec5f6aa79d3a424d53f5b99147b21dbc00456b05bc978a71"""" +
+      """},""" +
+      """{""" +
+      """"owner": "main",""" +
+      """"path": "44'/0'",""" +
+      """"pub_key": "04fb60043afe80ee1aeb0160e2aafc94690fb4427343e8d4bf410105b1121f7a44a311668fa80a7a341554a4ef5262bc6ebd8cc981b8b600dafd40f7682edb5b3b",""" +
+      """"chain_code": "88c2281acd51737c912af74cc1d1a8ba564eb7925e0d58a5500b004ba76099cb"""" +
+      """}""" +
+      """]""" +
+      """}"""
+
+  private val CORRECT_BODY_IDX1 =
+    """{""" +
+      """"account_index": 1,""" +
+      """"derivations": [""" +
+      """{""" +
+      """"owner": "main",""" +
+      """"path": "44'/0'/1'",""" +
       """"pub_key": "0437bc83a377ea025e53eafcd18f299268d1cecae89b4f15401926a0f8b006c0f7ee1b995047b3e15959c5d10dd1563e22a2e6e4be9572aa7078e32f317677a901",""" +
       """"chain_code": "d1bb833ecd3beed6ec5f6aa79d3a424d53f5b99147b21dbc00456b05bc978a71"""" +
       """},""" +

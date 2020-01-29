@@ -80,6 +80,12 @@ class AccountsController @Inject()(accountsService: AccountsService) extends Con
       }
     }
 
+    // End point queries for account views with specified pool name and wallet name.
+    delete("/accounts/:account_index") { request: AccountRequest =>
+      info(s"DELETE accounts $request")
+      accountsService.eraseAccountData(request.accountInfo)
+    }
+
     // End point queries for account view with specified pool, wallet name, and unique account index.
     prefix("/accounts/:account_index") {
 

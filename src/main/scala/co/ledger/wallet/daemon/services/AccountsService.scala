@@ -9,6 +9,7 @@ import cats.instances.option._
 import cats.syntax.either._
 import cats.syntax.traverse._
 import co.ledger.core
+import co.ledger.core.ErrorCode
 import co.ledger.wallet.daemon.async.MDCPropagatingExecutionContext.Implicits.global
 import co.ledger.wallet.daemon.clients.ApiClient.FallbackParams
 import co.ledger.wallet.daemon.clients.ClientFactory
@@ -63,6 +64,21 @@ class AccountsService @Inject()(daemonCache: DaemonCache) extends DaemonService 
     daemonCache.withWallet(accountInfo.walletInfo) { wallet =>
       wallet.account(accountInfo.accountIndex).flatMap(ao =>
         ao.map(_.accountView(accountInfo.walletName, wallet.getCurrency.currencyView)).sequence)
+    }
+  }
+
+  def eraseAccountData(accountInfo: AccountInfo): Future[Unit] = {
+    daemonCache.withWallet(accountInfo.walletInfo) { wallet =>
+      wallet.account(accountInfo.accountIndex)
+        .map {
+          case Some(acc) =>
+            acc.eraseDataSince(new Date(0L),
+              (errorCode: ErrorCode, error: core.Error) =>
+                this.error(s"Failed to erase data from pool ${accountInfo.poolName}, " +
+                  s"wallet : ${accountInfo.walletName} index:  ${accountInfo.accountIndex} " +
+                  s"due to Error (${errorCode.name()} - ${error.getMessage})"))
+          case _ => info(s"Account ${accountInfo.poolName} - ${accountInfo.walletName} - ${accountInfo.accountIndex} not found")
+        }
     }
   }
 

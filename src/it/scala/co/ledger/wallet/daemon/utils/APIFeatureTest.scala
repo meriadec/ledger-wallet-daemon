@@ -46,8 +46,16 @@ trait APIFeatureTest extends FeatureTest {
     server.httpPost("/pools/operations/synchronize", "", headers = defaultHeaders, andExpect = expected)
   }
 
+  def assertSyncAccount(poolName: String, walletName: String, accIdx: Int): Response = {
+    server.httpPost(s"/pools/$poolName/wallets/$walletName/accounts/$accIdx/operations/synchronize", "", headers = defaultHeaders, andExpect = Status.Ok)
+  }
+
   protected def assertCreateAccount(accountCreationBody: String, poolName: String, walletName: String, expected: Status): Response = {
     server.httpPost(s"/pools/$poolName/wallets/$walletName/accounts", accountCreationBody, headers = defaultHeaders, andExpect = expected)
+  }
+
+  protected def deleteAccount(poolName: String, walletName: String, accountIdx: Int, expected: Status): Response = {
+    server.httpDelete(s"/pools/$poolName/wallets/$walletName/accounts/$accountIdx", headers = defaultHeaders, andExpect = expected)
   }
 
   private def lwdBasicAuthorisationHeader(seedName: String, time: Date = new Date()) = {
