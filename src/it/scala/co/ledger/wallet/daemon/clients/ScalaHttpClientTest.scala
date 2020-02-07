@@ -6,43 +6,100 @@ import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
 import co.ledger.core
 import co.ledger.core.{HttpMethod, HttpRequest, HttpUrlConnection}
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import com.fasterxml.jackson.module.scala.experimental.ScalaObjectMapper
 import com.twitter.inject.Logging
 import org.junit.Test
 import org.scalatest.junit.AssertionsForJUnit
 
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
-
 @Test
-class ScalaHttpClientTest extends AssertionsForJUnit with Logging{
-  val url = "https://postman-echo.com/get?foo1=bar1&foo2=bar2"
-  val headers: util.HashMap[String, String] = new util.HashMap[String, String]()
+class ScalaHttpClientTest extends AssertionsForJUnit with Logging {
+  implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(3))
+
+  val mapper = new ObjectMapper() with ScalaObjectMapper
+  mapper.registerModule(DefaultScalaModule)
+
+  case class DataType(param1: String, param2: Int, param3: Array[Long])
 
   @Test
-  def testSimpleGETRequest(): Unit = {
-    implicit val ec: ExecutionContext = ExecutionContext.fromExecutor( Executors.newFixedThreadPool(3))
-    val lock: CountDownLatch = new CountDownLatch(1)
-    val client: ScalaHttpClient = new ScalaHttpClient()
-    val result: AtomicReference[Either[core.Error, HttpUrlConnection]] = new AtomicReference()
-    val req = new HttpRequestT(result, lock)
-    client.execute(req)
-    lock.await(30000, TimeUnit.MILLISECONDS)
-    assert(result.get().isRight)
-    val httpResult: HttpUrlConnection = result.get().right.get
+  def testHTTPSGETRequest(): Unit = {
+    val url = "https://postman-echo.com/get?foo1=bar1&foo2=bar2"
+    val bodyByte = Array.emptyByteArray
+    val res = awaitExecution(url, bodyByte, HttpMethod.GET)
+
+    assert(res.isRight)
+    val httpResult: HttpUrlConnection = res.right.get
     val body = new String(httpResult.readBody().getData)
+    assert(httpResult.getStatusCode == 200, s"Status text is : ${httpResult.getStatusText} body is : ${body}")
+    assert(mapper.readTree(body).get("args").toString == "{\"foo1\":\"bar1\",\"foo2\":\"bar2\"}")
+    assert(mapper.readTree(body).get("headers").get("x-forwarded-port").textValue() == "443")
+    assert(body.contains("\"user-agent\":\"ledger-lib-core\""), s"Here is the body ${body}")
+  }
+
+  @Test
+  def testHTTPGETRequest(): Unit = {
+    val url = "http://postman-echo.com/get?foo1=bar1&foo2=bar2"
+    val bodyByte = Array.emptyByteArray
+    val res = awaitExecution(url, bodyByte, HttpMethod.GET)
+
+    assert(res.isRight)
+    val httpResult: HttpUrlConnection = res.right.get
+    val body = new String(httpResult.readBody().getData)
+    assert(httpResult.getStatusCode == 200, s"Status text is : ${httpResult.getStatusText} body is : ${body}")
+    assert(mapper.readTree(body).get("args").toString == "{\"foo1\":\"bar1\",\"foo2\":\"bar2\"}")
+    assert(mapper.readTree(body).get("headers").get("x-forwarded-port").textValue() == "88")
+    assert(body.contains("\"user-agent\":\"ledger-lib-core\""), s"Here is the body ${body}")
+  }
+
+  @Test
+  def testSimplePOSTRequest(): Unit = {
+    val url = "https://postman-echo.com/post?foo1=bar1&foo2=bar2"
+    val sentBodyData = new DataType("val1", 12, Array[Long](1, 2, 3, 10))
+    val bodyByte = mapper.writeValueAsBytes(sentBodyData)
+
+    val res = awaitExecution(url, bodyByte, HttpMethod.POST)
+    assert(res.isRight)
+    val httpResult: HttpUrlConnection = res.right.get
+    val body = new String(httpResult.readBody().getData)
+    val returnedData = mapper.readTree(httpResult.readBody().getData).get("data").toString
+    assert(returnedData == mapper.writeValueAsString(sentBodyData))
     assert(httpResult.getStatusCode == 200, s"Status text is : ${httpResult.getStatusText} body is : ${body}")
     info((s"Body is : $body"))
     assert(body.contains("\"user-agent\":\"ledger-lib-core\""), s"Here is the body ${body}")
   }
 
+  private def awaitExecution(url: String, bodyByte: Array[Byte], httpMethod: HttpMethod) = {
+    val lock: CountDownLatch = new CountDownLatch(1)
+    val resultHolder: AtomicReference[Either[core.Error, HttpUrlConnection]] = new AtomicReference()
+    val req = new HttpRequestT(url, httpMethod, Map[String, String](), bodyByte, lock, resultHolder)
+    new ScalaHttpClient().execute(req)
+    lock.await(30000, TimeUnit.MILLISECONDS)
+    resultHolder.get()
+  }
 
-  class HttpRequestT(result: AtomicReference[Either[core.Error, HttpUrlConnection]], countDownLatch: CountDownLatch) extends HttpRequest {
+  @Test
+  def testMalFormedURLIsManaged(): Unit = {
+    val url = "ptt://malformedURL(^"
+    val res = awaitExecution(url, Array.emptyByteArray, HttpMethod.POST)
+    assert(res.isLeft)
+    assert(res.left.get.getCode == core.ErrorCode.HTTP_ERROR)
+  }
 
-    override def getMethod: HttpMethod = HttpMethod.GET
+  class HttpRequestT(url: String,
+                     method: HttpMethod, headers: Map[String, String],
+                     body: Array[Byte] = Array.emptyByteArray,
+                     countDownLatch: CountDownLatch,
+                     result: AtomicReference[Either[core.Error, HttpUrlConnection]]) extends HttpRequest {
 
-    override def getHeaders: util.HashMap[String, String] = headers
+    override def getMethod: HttpMethod = method
 
-    override def getBody: Array[Byte] = Array.emptyByteArray
+    override def getHeaders: util.HashMap[String, String] = new util.HashMap(headers.asJava)
+
+    override def getBody: Array[Byte] = body
 
     override def getUrl: String = url
 
@@ -51,5 +108,6 @@ class ScalaHttpClientTest extends AssertionsForJUnit with Logging{
       countDownLatch.countDown()
     }
   }
+
 
 }
