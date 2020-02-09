@@ -42,7 +42,7 @@ class ScalaHttpClientTest extends AssertionsForJUnit with Logging {
 
   @Test
   def testHTTPGETRequest(): Unit = {
-    val url = "http://postman-echo.com/get?foo1=bar1&foo2=bar2"
+    val url = "http://postman-echo.com/get?foo3=bazz&foo4=10-11-2020"
     val bodyByte = Array.emptyByteArray
     val res = awaitExecution(url, bodyByte, HttpMethod.GET)
 
@@ -50,8 +50,8 @@ class ScalaHttpClientTest extends AssertionsForJUnit with Logging {
     val httpResult: HttpUrlConnection = res.right.get
     val body = new String(httpResult.readBody().getData)
     assert(httpResult.getStatusCode == 200, s"Status text is : ${httpResult.getStatusText} body is : ${body}")
-    assert(mapper.readTree(body).get("args").toString == "{\"foo1\":\"bar1\",\"foo2\":\"bar2\"}")
-    assert(mapper.readTree(body).get("headers").get("x-forwarded-port").textValue() == "88")
+    assert(mapper.readTree(body).get("args").toString == "{\"foo3\":\"bazz\",\"foo4\":\"10-11-2020\"}")
+    assert(mapper.readTree(body).get("headers").get("x-forwarded-port").textValue() == "80")
     assert(body.contains("\"user-agent\":\"ledger-lib-core\""), s"Here is the body ${body}")
   }
 
@@ -72,7 +72,7 @@ class ScalaHttpClientTest extends AssertionsForJUnit with Logging {
     assert(body.contains("\"user-agent\":\"ledger-lib-core\""), s"Here is the body ${body}")
   }
 
-  private def awaitExecution(url: String, bodyByte: Array[Byte], httpMethod: HttpMethod) = {
+  private def awaitExecution(url: String, bodyByte: Array[Byte], httpMethod: HttpMethod): Either[co.ledger.core.Error, HttpUrlConnection] = {
     val lock: CountDownLatch = new CountDownLatch(1)
     val resultHolder: AtomicReference[Either[core.Error, HttpUrlConnection]] = new AtomicReference()
     val req = new HttpRequestT(url, httpMethod, Map[String, String](), bodyByte, lock, resultHolder)

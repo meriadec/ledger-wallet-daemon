@@ -133,14 +133,19 @@ object ScalaHttpClient {
     Try(new URL(url)) match {
       case Success(uri) =>
         (DaemonConfiguration.proxy match {
-          case Some(proxy) => Right(client.withTransport.httpProxyTo(s"${uri.getHost}:${resolvePort(uri)}") // FIXME TLS ??
-            .withTls(uri.getHost)
+          case Some(proxy) => Right(tls(uri, client).withTransport.httpProxyTo(s"${uri.getHost}:${resolvePort(uri)}") // FIXME TLS ??
             .newService(s"${proxy.host}:${proxy.port}"))
-          case None => Right(client.withTls(uri.getHost).newService(s"${uri.getHost}:${resolvePort(uri)}"))
+          case None => Right(tls(uri, client).newService(s"${uri.getHost}:${resolvePort(uri)}"))
         })
       case Failure(exception) => Left(s"Failed to parse url $url : ${exception.getMessage}")
     }
   }
+
+  def tls(url: URL, client: Http.Client): Http.Client =
+    url.getProtocol match {
+      case "https" => client.withTls(url.getHost)
+      case _ => client
+    }
 
   def resolvePort(url: URL): Int = url.getPort match {
     case port if port > 0 => port
