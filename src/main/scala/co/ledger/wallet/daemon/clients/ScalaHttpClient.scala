@@ -115,11 +115,10 @@ object ScalaHttpClient {
     .withSessionPool.maxSize(DaemonConfiguration.explorer.client.connectionPoolSize)
     .withSessionPool.ttl(Duration.fromSeconds(DaemonConfiguration.explorer.client.connectionTtl))
 
-  // FIXME : Configure pool ttl
+  // FIXME : Configure cache pool ttl and cache size
   private val connectionPools: LoadingCache[Host, Service[Request, Response]] =
     CacheBuilder.newBuilder()
       .maximumSize(50)
-      .expireAfterAccess(java.time.Duration.ofMinutes(60))
       .build[Host, Service[Request, Response]](new CacheLoader[Host, Service[Request, Response]] {
         def load(host: Host): Service[Request, Response] = {
           serviceFor(host) match {
@@ -132,11 +131,11 @@ object ScalaHttpClient {
   def serviceFor(url: Host): Either[String, Service[Request, Response]] = {
     Try(new URL(url)) match {
       case Success(uri) =>
-        (DaemonConfiguration.proxy match {
-          case Some(proxy) => Right(tls(uri, client).withTransport.httpProxyTo(s"${uri.getHost}:${resolvePort(uri)}") // FIXME TLS ??
+        DaemonConfiguration.proxy match {
+          case Some(proxy) => Right(tls(uri, client).withTransport.httpProxyTo(s"${uri.getHost}:${resolvePort(uri)}")
             .newService(s"${proxy.host}:${proxy.port}"))
           case None => Right(tls(uri, client).newService(s"${uri.getHost}:${resolvePort(uri)}"))
-        })
+        }
       case Failure(exception) => Left(s"Failed to parse url $url : ${exception.getMessage}")
     }
   }
