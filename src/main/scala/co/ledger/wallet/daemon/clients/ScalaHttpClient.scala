@@ -24,11 +24,10 @@ class ScalaHttpClient(implicit val ec: ExecutionContext) extends co.ledger.core.
   import ScalaHttpClient._
 
   override def execute(request: HttpRequest): Unit = Future {
-    Try(connectionPools.get(request.getUrl)) match {
+    Try(new URL(request.getUrl)).map(urlToHost).map(host => connectionPools.get(host)) match {
       case Success(service) =>
         val req: Request = Request(resolveMethod(request.getMethod), request.getUrl)
-        req.headerMap.put("User-Agent", "ledger-lib-core")
-        req.headerMap.put("Content-Type", "application/json")
+        request.getHeaders.entrySet.forEach(hkv => req.headerMap.put(hkv.getKey, hkv.getValue))
         if (request.getBody.nonEmpty) {
           req.content(Buf.ByteArray.Owned(request.getBody))
         }
@@ -43,7 +42,7 @@ class ScalaHttpClient(implicit val ec: ExecutionContext) extends co.ledger.core.
             readResponseBody(response, isOnError(response.status.code)))
         }
         result.map(r => request.complete(r, null))
-      case Failure(exception) => request.complete(null, new Error(ErrorCode.HTTP_ERROR, exception.getMessage))
+      case Failure(exception) => request.complete(null, new Error(ErrorCode.HTTP_ERROR, s"Failed to parse url ${request.getUrl} => ${exception.getMessage}"))
     }
   }
 
@@ -99,7 +98,8 @@ class ScalaHttpClient(implicit val ec: ExecutionContext) extends co.ledger.core.
 
 object ScalaHttpClient {
   val PROXY_BUFFER_SIZE: Int = 4 * 4096
-  type Host = String
+
+  case class Host(hostName: String, protocol: String, port: Int)
 
   private[this] val budget: RetryBudget = RetryBudget(
     ttl = Duration.fromSeconds(DaemonConfiguration.explorer.client.retryTtl),
@@ -128,21 +128,17 @@ object ScalaHttpClient {
         }
       })
 
-  def serviceFor(url: Host): Either[String, Service[Request, Response]] = {
-    Try(new URL(url)) match {
-      case Success(uri) =>
-        DaemonConfiguration.proxy match {
-          case Some(proxy) => Right(tls(uri, client).withTransport.httpProxyTo(s"${uri.getHost}:${resolvePort(uri)}")
-            .newService(s"${proxy.host}:${proxy.port}"))
-          case None => Right(tls(uri, client).newService(s"${uri.getHost}:${resolvePort(uri)}"))
-        }
-      case Failure(exception) => Left(s"Failed to parse url $url : ${exception.getMessage}")
+  def serviceFor(host: Host): Either[String, Service[Request, Response]] = {
+    DaemonConfiguration.proxy match {
+      case Some(proxy) => Right(tls(host, client).withTransport.httpProxyTo(s"${host.hostName}:${host.port}")
+        .newService(s"${proxy.host}:${proxy.port}"))
+      case None => Right(tls(host, client).newService(s"${host.hostName}:${host.port}"))
     }
   }
 
-  def tls(url: URL, client: Http.Client): Http.Client =
-    url.getProtocol match {
-      case "https" => client.withTls(url.getHost)
+  def tls(host: Host, client: Http.Client): Http.Client =
+    host.protocol match {
+      case "https" => client.withTls(host.hostName)
       case _ => client
     }
 
@@ -153,4 +149,10 @@ object ScalaHttpClient {
       case _ => 80 // Port 80 by default
     }
   }
+
+  def poolCacheSize: Long = connectionPools.size()
+
+  def isHostCached(host: Host): Boolean = connectionPools.asMap().containsKey(host)
+
+  def urlToHost(url: URL): Host = Host(url.getHost, url.getProtocol, resolvePort(url))
 }

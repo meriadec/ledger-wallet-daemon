@@ -67,17 +67,78 @@ class ScalaHttpClientTest extends AssertionsForJUnit with Logging {
     val body = new String(httpResult.readBody().getData)
     val returnedData = mapper.readTree(httpResult.readBody().getData).get("data").toString
     assert(returnedData == mapper.writeValueAsString(sentBodyData))
-    assert(httpResult.getStatusCode == 200, s"Status text is : ${httpResult.getStatusText} body is : ${body}")
-    info((s"Body is : $body"))
-    assert(body.contains("\"user-agent\":\"ledger-lib-core\""), s"Here is the body ${body}")
+    assert(httpResult.getStatusCode == 200, s"Status text is : ${httpResult.getStatusText} body is : $body")
+    info(s"Body is : $body")
+    assert(body.contains("\"user-agent\":\"ledger-lib-core\""), s"Here is the body $body")
+  }
+
+  @Test
+  def testPoolsAreCachedByHost(): Unit = {
+    val https = "https"
+    val http = "http"
+    val cacheSizeStart = ScalaHttpClient.poolCacheSize
+    val hostName1 = "www.google.com"
+    val hostName2 = "www.yahoo.com"
+    val url1 = s"https://$hostName1?aaa=bbb"
+    val host1 = ScalaHttpClient.Host(hostName1, https, 443)
+    // Same host different params
+    val url2 = s"https://$hostName1?aaa=bbb&bbb=ccc"
+    // Same host different protocol
+    val url3 = s"http://$hostName1?aaa=bbb&bbb=ccc"
+    val host3 = ScalaHttpClient.Host(hostName1, http, 80)
+
+    // Same params different host
+    val url4 = s"https://$hostName2?aaa=bbb&bbb=ccc"
+    val host4 = ScalaHttpClient.Host(hostName2, https, 443)
+
+    // Same host but port is different
+    val portHost2 = 8080
+    val url5 = s"https://$hostName2:$portHost2?aaa=bbb&bbb=ccc"
+    val host5 = ScalaHttpClient.Host(hostName2, https, portHost2)
+
+
+
+    // Check hosts are not known
+    assert(!ScalaHttpClient.isHostCached(host1))
+    assert(!ScalaHttpClient.isHostCached(host3))
+    assert(!ScalaHttpClient.isHostCached(host4))
+    assert(!ScalaHttpClient.isHostCached(host5))
+
+
+    awaitExecution(url1, Array.emptyByteArray, HttpMethod.GET, 200)
+    assert(ScalaHttpClient.poolCacheSize == cacheSizeStart + 1)
+    assert(ScalaHttpClient.isHostCached(host1))
+
+    awaitExecution(url2, Array.emptyByteArray, HttpMethod.GET, 200)
+    assert(ScalaHttpClient.poolCacheSize == cacheSizeStart + 1)
+    assert(ScalaHttpClient.isHostCached(host1))
+
+    awaitExecution(url3, Array.emptyByteArray, HttpMethod.GET, 200)
+    // An other protocol means an new connection pool
+    assert(ScalaHttpClient.poolCacheSize == cacheSizeStart + 2)
+    assert(ScalaHttpClient.isHostCached(host3))
+
+    awaitExecution(url4, Array.emptyByteArray, HttpMethod.GET, 200)
+    // An other host, new connection pool
+    assert(ScalaHttpClient.poolCacheSize == cacheSizeStart + 3)
+    assert(ScalaHttpClient.isHostCached(host4))
+
+    awaitExecution(url5, Array.emptyByteArray, HttpMethod.GET, 200)
+    // same host but new port means new connection pool
+    assert(ScalaHttpClient.poolCacheSize == cacheSizeStart + 4)
+    assert(ScalaHttpClient.isHostCached(host5))
   }
 
   private def awaitExecution(url: String, bodyByte: Array[Byte], httpMethod: HttpMethod): Either[co.ledger.core.Error, HttpUrlConnection] = {
+    awaitExecution(url, bodyByte, httpMethod, 10000)
+  }
+
+  private def awaitExecution(url: String, bodyByte: Array[Byte], httpMethod: HttpMethod, timeoutMs: Long): Either[co.ledger.core.Error, HttpUrlConnection] = {
     val lock: CountDownLatch = new CountDownLatch(1)
     val resultHolder: AtomicReference[Either[core.Error, HttpUrlConnection]] = new AtomicReference()
-    val req = new HttpRequestT(url, httpMethod, Map[String, String](), bodyByte, lock, resultHolder)
+    val req = new HttpRequestT(url, httpMethod, Map[String, String]("User-Agent" -> "ledger-lib-core", "Content-Type" -> "application/json"), bodyByte, lock, resultHolder)
     new ScalaHttpClient().execute(req)
-    lock.await(30000, TimeUnit.MILLISECONDS)
+    lock.await(timeoutMs, TimeUnit.MILLISECONDS)
     resultHolder.get()
   }
 
