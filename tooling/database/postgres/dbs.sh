@@ -2,7 +2,10 @@
 # This script is necessary to run integration tests
 host=$1
 port=$2
-drop_mode=$3
+user=$3
+pwd=$4
+prefix=$5
+drop_mode=$6
 
 command=createdb
 if [ -n "$drop_mode" ]; then
@@ -20,7 +23,10 @@ tests=(currency_pool test_pool test_pool1 op_pool_mal info_pool exist_pool fresh
 # Create all DBs with names above
 for elem in "${tests[@]}"
 do
-    $command -h $host -p $port $elem
+    echo "     * Creating database : $prefix$elem"
+    $command -h $host -p $port $prefix$elem -w -U $user
+    echo "     |--> $prefix$elem Done"
+
 done
 
 

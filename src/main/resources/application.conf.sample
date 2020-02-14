@@ -155,7 +155,7 @@ explorer = {
       }
     ]
   }
-  
+
   ws = {
     default = "wss://ws.ledgerwallet.com/blockchain/v2/{}/ws"
     default = ${?WALLET_DEFAULT_WS_ENDPOINT}

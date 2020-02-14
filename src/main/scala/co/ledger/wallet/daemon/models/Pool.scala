@@ -62,6 +62,7 @@ class Pool(private val coreP: core.WalletPool, val id: Long) extends Logging {
   def wallets: Future[Seq[core.Wallet]] = {
     coreP.getWalletCount().flatMap { count =>
       val batch = 20
+
       def walletsFromOffset(offset: Int): Future[List[core.Wallet]] = {
         val size = Math.min(batch, count - offset)
         if (size <= 0) {
@@ -73,6 +74,7 @@ class Pool(private val coreP: core.WalletPool, val id: Long) extends Logging {
           } yield fetchWallets ++ nextWallets
         }
       }
+
       walletsFromOffset(0)
     }
   }
@@ -268,7 +270,7 @@ class Pool(private val coreP: core.WalletPool, val id: Long) extends Logging {
   }
 }
 
-object Pool {
+object Pool extends Logging {
   private val config = ConfigFactory.load()
 
   def newInstance(coreP: core.WalletPool, id: Long): Pool = {
@@ -279,6 +281,7 @@ object Pool {
     val poolConfig = core.DynamicObject.newInstance()
     val dbBackend = Try(config.getString("core_database_engine")).toOption.getOrElse("sqlite3") match {
       case "postgres" =>
+        info("Using PostgreSql as core database engine")
         val dbName = for {
           dbPort <- Try(config.getString("postgres.port"))
           dbHost <- Try(config.getString("postgres.host"))
@@ -300,7 +303,9 @@ object Pool {
           case Failure(exception) =>
             throw CoreDatabaseException("Failed to configure wallet daemon's core database", exception)
         }
-      case _ => core.DatabaseBackend.getSqlite3Backend
+      case _ =>
+        info("Using Sqlite as core database engine")
+        core.DatabaseBackend.getSqlite3Backend
     }
 
     core.WalletPoolBuilder.createInstance()

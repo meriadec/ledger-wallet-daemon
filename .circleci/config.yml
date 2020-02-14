@@ -45,6 +45,7 @@ jobs:
       - image: ledgerhq/sbt-openjdk-8
     steps:
       - checkout
+      - restore_cache: *dependencies_cache
       - run:
           name: Run scalastyle
           command: sbt -Dsbt.ivy.home=.ivy2 -sbt-dir .sbt scalastyle
@@ -52,23 +53,45 @@ jobs:
   integration_tests:
     docker:
       - image: ledgerhq/sbt-openjdk-8
+      - image: sameersbn/squid:3.5.27-2
+      - image: postgres:11.6
         environment:
-          JVM_OPTS: -Xmx3200m
-          TERM: dumb
+          POSTGRES_DB: postgres
+          POSTGRES_USER: ledger
+          POSTGRES_PASSWORD: ledger_secret
+        command: -c "ssl=on" -c "ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key" -c "ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem"
+
     steps:
       - checkout
       - restore_cache: *dependencies_cache
       - run:
-          name: Install PostgreSQL dependencies
-          command: |
-            apt-get update
-            apt-get install -yq libpq-dev
+          name: Installing Dependencies
+          command: apt-get update && apt-get install -y postgresql-client netcat
+      - run:
+          name: Waiting for Postgres to be ready
+          command: tooling/network/waitForService.sh 0.0.0.0 5432
+
+      - run:
+          name: Create databases for test
+          command: tooling/database/postgres/dbs.sh 0.0.0.0 5432 ledger ledger_secret wdtest_
+          environment:
+            PGPASSWORD: ledger_secret
       - run:
           name: Run integration tests and code coverage
           command: sbt -Dsbt.ivy.home=.ivy2 -sbt-dir .sbt clean coverage it:test coverageReport
+          environment:
+            WALLET_PROXY_ENABLED: 'true'
+            WALLET_PROXY_HOST: 0.0.0.0
+            WALLET_PROXY_PORT: 3128
+            CORE_DATABASE_ENGINE: postgres
+            CORE_PG_HOST: 0.0.0.0
+            CORE_PG_PORT: 5432
+            CORE_PG_USER: ledger
+            CORE_PG_PWD: ledger_secret
+            CORE_PG_DB_NAME_PREFIX: wdtest_
+            CORE_PG_CONNECTION_POOL_SIZE_PER_WALLET_POOL: 3
       - codecov/upload:
           file: target/scala-2.12/coverage-report/cobertura.xml
-
 workflows:
   build_test_and_publish:
     jobs:
