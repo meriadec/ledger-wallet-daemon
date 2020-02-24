@@ -151,8 +151,14 @@ class AccountsController @Inject()(accountsService: AccountsService) extends Con
       }
 
       // List of tokens on this account
+      get("/utxo") { request: UtxoAccountRequest =>
+        accountsService.getUtxo(request.accountInfo, request.offset, request.batch)
+      }
+
+      // List of tokens on this account
       get("/tokens") { request: AccountRequest =>
         accountsService.getTokenAccounts(request.accountInfo)
+
       }
 
       // operations of all tokens on this account
@@ -273,6 +279,16 @@ object AccountsController {
                                   request: Request
                                 )
     extends BaseSingleAccountRequest with WithTokenAccountInfo
+
+  case class UtxoAccountRequest(
+                                 @RouteParam pool_name: String,
+                                 @RouteParam wallet_name: String,
+                                 @RouteParam account_index: Int,
+                                 @QueryParam offset: Int = 0,
+                                 @QueryParam batch: Int = Int.MaxValue,
+                                 request: Request
+                               )
+    extends BaseSingleAccountRequest
 
   case class AccountCreationInfoRequest(
                                          @RouteParam pool_name: String,

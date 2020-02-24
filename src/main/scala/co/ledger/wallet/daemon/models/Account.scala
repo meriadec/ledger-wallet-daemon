@@ -1,5 +1,6 @@
 package co.ledger.wallet.daemon.models
 
+import java.util
 import java.util.{Calendar, Date}
 
 import cats.instances.future._
@@ -58,6 +59,10 @@ object Account extends Logging {
 
     def erc20Account(tokenAddress: String): Either[Exception, core.ERC20LikeAccount] =
       asERC20Account(tokenAddress, a)
+
+    def getUtxo(offset: Int, batch: Int): Future[util.ArrayList[co.ledger.core.BitcoinLikeOutput]] = {
+      Account.getUtxo(offset, batch, a)
+    }
 
     def balance(implicit ec: ExecutionContext): Future[scala.BigInt] =
       Account.balance(a)
@@ -124,6 +129,10 @@ object Account extends Logging {
         warn(s"Requested an erc20 account but it has not been found : $contract")
         Left(ERC20NotFoundException(contract))
     })
+  }
+
+  def getUtxo(offset: Int, batch: Int, a: core.Account): Future[util.ArrayList[co.ledger.core.BitcoinLikeOutput]] = {
+    a.asBitcoinLikeAccount().getUTXO(offset, offset + batch)
   }
 
   def erc20Accounts(a: core.Account): Either[Exception, List[core.ERC20LikeAccount]] =
@@ -505,3 +514,10 @@ case class FreshAddressView(
                              @JsonProperty("address") address: String,
                              @JsonProperty("derivation_path") derivation: String
                            )
+
+case class UTXOView(
+                     @JsonProperty("address") address: String,
+                     @JsonProperty("height") height: Long,
+                     @JsonProperty("confirmations") confirmations: Int,
+                     @JsonProperty("amount") amount: scala.BigInt,
+                   )
