@@ -1,6 +1,6 @@
 package co.ledger.wallet.daemon.models
 
-import java.util
+import java.util.ArrayList
 import java.util.{Calendar, Date}
 
 import cats.instances.future._
@@ -60,7 +60,7 @@ object Account extends Logging {
     def erc20Account(tokenAddress: String): Either[Exception, core.ERC20LikeAccount] =
       asERC20Account(tokenAddress, a)
 
-    def getUtxo(offset: Int, batch: Int): Future[util.ArrayList[co.ledger.core.BitcoinLikeOutput]] = {
+    def getUtxo(offset: Int, batch: Int): Future[ArrayList[co.ledger.core.BitcoinLikeOutput]] = {
       Account.getUtxo(offset, batch, a)
     }
 
@@ -131,7 +131,7 @@ object Account extends Logging {
     })
   }
 
-  def getUtxo(offset: Int, batch: Int, a: core.Account): Future[util.ArrayList[co.ledger.core.BitcoinLikeOutput]] = {
+  def getUtxo(offset: Int, batch: Int, a: core.Account): Future[ArrayList[co.ledger.core.BitcoinLikeOutput]] = {
     a.asBitcoinLikeAccount().getUTXO(offset, offset + batch)
   }
 
@@ -519,5 +519,5 @@ case class UTXOView(
                      @JsonProperty("address") address: String,
                      @JsonProperty("height") height: Long,
                      @JsonProperty("confirmations") confirmations: Int,
-                     @JsonProperty("amount") amount: scala.BigInt,
+                     @JsonProperty("amount") amount: scala.BigInt
                    )

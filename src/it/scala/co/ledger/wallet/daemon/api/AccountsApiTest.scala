@@ -3,7 +3,7 @@ package co.ledger.wallet.daemon.api
 import java.util.UUID
 
 import co.ledger.core.TimePeriod
-import co.ledger.wallet.daemon.models.{AccountDerivationView, AccountView, FreshAddressView}
+import co.ledger.wallet.daemon.models.{AccountDerivationView, AccountView, FreshAddressView, UTXOView}
 import co.ledger.wallet.daemon.services.OperationQueryParams
 import co.ledger.wallet.daemon.utils.APIFeatureTest
 // import com.fasterxml.jackson.databind.JsonNode
@@ -64,6 +64,18 @@ class AccountsApiTest extends APIFeatureTest {
     val addresses = parse[Seq[FreshAddressView]](assertGetFreshAddresses("fresh_addresses_pool", "account_wallet", index = 0, Status.Ok))
     assert(addresses.nonEmpty)
     deletePool("fresh_addresses_pool")
+  }
+
+  test("AccountsApi#Get utxo from btc account") {
+    val poolName = "getUtxo_pool"
+    createPool(poolName)
+    assertWalletCreation(poolName, "account_wallet", "bitcoin", Status.Ok)
+    assertCreateAccount(CORRECT_BODY, poolName, "account_wallet", Status.Ok)
+    val utxoList = parse[List[UTXOView]](assertGetUTXO(poolName, "account_wallet", index = 0, Status.Ok))
+    // FIXME : There is no UTXO on this account so the result is empty
+    // assert(utxoList.nonEmpty)
+    assert(utxoList.isEmpty)
+    deletePool(poolName)
   }
 
   test("AccountsApi#Get account(s) from non exist pool return bad request") {
@@ -218,11 +230,15 @@ class AccountsApiTest extends APIFeatureTest {
       case None => server.httpGet(s"/pools/$poolName/wallets/$walletName/accounts/next", headers = defaultHeaders, andExpect = expected)
       case Some(i) => server.httpGet(s"/pools/$poolName/wallets/$walletName/accounts/next?account_index=$i", headers = defaultHeaders, andExpect = expected)
     }
-
   }
 
   private def assertGetFreshAddresses(poolName: String, walletName: String, index: Int, expected: Status): Response = {
     server.httpGet(s"/pools/$poolName/wallets/$walletName/accounts/$index/addresses/fresh", headers = defaultHeaders, andExpect = expected)
+  }
+
+  private def assertGetUTXO(poolName: String, walletName: String, index: Int, expected: Status): Response = {
+    server.httpGet(s"/pools/$poolName/wallets/$walletName/accounts/$index/utxo", headers = defaultHeaders, andExpect = expected)
+    server.httpGet(s"/pools/$poolName/wallets/$walletName/accounts/$index/utxo?offset=2&batch=10", headers = defaultHeaders, andExpect = expected)
   }
 
   private val CORRECT_BODY =
